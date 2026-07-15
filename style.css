@@ -440,6 +440,119 @@ button.ghost {
 .view { animation: fade 0.15s ease; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
+/* ---------- adventure mode ---------- */
+#view-adventure { position: relative; }
+.adv-top { display: flex; gap: 0.6rem; align-items: stretch; }
+.adv-top .wall { flex: 1; }
+/* wall turns danger-red at the edges when a fall would be scary */
+.wall.scared { box-shadow: inset 0 0 70px 18px rgba(204,51,51,0.55); }
+.hud-stance { right: 8px; background: rgba(0,0,0,0.55); }
+/* "Too big" / "Too small" shown over the crack on a misfit placement */
+.adv-fit-msg {
+  position: absolute; inset: 0; z-index: 7;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.4rem; font-weight: 800; color: var(--bad);
+  text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+  pointer-events: none;
+}
+
+/* vertical route gauge: 0ft at bottom → 100ft at top */
+.route-gauge {
+  position: relative; width: 56px; flex: none;
+  border-radius: 10px; border: 1px solid var(--line);
+  background: linear-gradient(180deg, #2a333d, #1b2129);
+  overflow: hidden;
+}
+/* crack-width profile + stance bands (stretched to fill the gauge) */
+.gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* ground line at the very bottom */
+.route-gauge::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: #6b6157;
+}
+.gauge-fall {
+  position: absolute; left: 6px; right: 6px;
+  background: rgba(224,169,27,0.28); border-radius: 3px;
+}
+.gauge-fall.danger { background: rgba(204,51,51,0.4); }
+.gauge-gear {
+  position: absolute; left: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; border: 1px solid rgba(0,0,0,0.5); z-index: 2;
+}
+.gauge-climber {
+  position: absolute; left: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px;
+  border-radius: 50%; background: #fff; border: 2px solid var(--accent);
+  box-shadow: 0 0 8px rgba(0,0,0,0.6); z-index: 3;
+}
+
+.adv-stamina { display: flex; align-items: center; gap: 0.6rem; margin: 0.7rem 0 0.4rem; }
+.adv-stamina-label { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.adv-stamina .rc-track { flex: 1; height: 18px; }
+.adv-stamina .rc-bar { top: 0; bottom: 0; left: 0; border-radius: 4px; transition: width 0.12s linear; }
+
+.adv-readouts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.7rem; }
+.adv-chip {
+  display: inline-flex; align-items: baseline; gap: 0.3rem;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+  padding: 0.2rem 0.6rem; font-size: 0.85rem;
+}
+.adv-chip .k { color: var(--muted); font-size: 0.75rem; }
+.adv-chip .v { font-weight: 700; }
+.adv-chip.scared { color: var(--bad); border-color: var(--bad); font-weight: 700;
+  animation: flamepulse 0.9s ease-in-out infinite alternate; }
+
+.adv-controls { margin-top: 0.8rem; text-align: center; }
+.adv-controls .primary { font-size: 1.05rem; padding: 0.7rem 1.6rem; }
+
+.adv-outcome { margin-top: 0.9rem; text-align: center; }
+.adv-outcome-msg { font-size: 1.5rem; font-weight: 700; margin: 0 0 0.7rem; }
+.adv-outcome-msg.send { color: var(--good); }
+.adv-outcome-msg.send-flash { color: var(--accent); }
+.adv-outcome-msg.fall { color: var(--bad); }
+.adv-outcome .btn-row { justify-content: center; }
+
+/* cam-placement animation: a colored cam, sized to the crack, rises in with lobes
+   retracted, then the lobes spring to an intermediate spread and the cam stays put. */
+.cam-anim {
+  position: absolute; left: 50%; top: 50%; z-index: 6;
+  transform: translate(-50%, -50%);   /* width/height set inline by JS to match the crack */
+  pointer-events: none;
+}
+.cam-anim-move { width: 100%; height: 100%; }
+.cam-anim svg {
+  width: 100%; height: 100%; display: block;
+  stroke: rgba(255,255,255,0.35); stroke-width: 7px; /* keeps dark cams visible */
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,0.7));
+}
+/* lobes rest at the intermediate spread, so the placed cam holds this look */
+.cam-anim .cam-lobes { transform-box: fill-box; transform-origin: center; transform: scaleX(0.7); }
+.cam-anim.play .cam-anim-move { animation: cam-place 1.15s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes cam-place {
+  0%   { transform: translateY(180px) scale(0.9); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.cam-anim.play .cam-lobes { animation: cam-lobes 1.15s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes cam-lobes {
+  0%, 45% { transform: scaleX(0.2); }   /* pulled in tight while entering */
+  80%     { transform: scaleX(0.8); }   /* small overshoot */
+  100%    { transform: scaleX(0.7); }   /* settle at intermediate spread */
+}
+
+/* spent cams in the inventory */
+.gear-btn.used { opacity: 0.3; filter: grayscale(0.8); cursor: default; }
+
+/* confetti burst on a flash send */
+.confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 20; }
+.confetti-bit {
+  position: absolute; top: -12px; width: 8px; height: 12px; border-radius: 1px;
+  animation: confetti-fall 2.4s linear forwards;
+}
+@keyframes confetti-fall {
+  from { transform: translateY(0) translateX(0) rotate(var(--rot)); opacity: 1; }
+  to   { transform: translateY(115vh) translateX(var(--drift)) rotate(calc(var(--rot) + 540deg)); opacity: 0.9; }
+}
+
 /* keep the (now busier) menu bar from overflowing on small screens */
 @media (max-width: 560px) {
   .topbar { flex-wrap: wrap; row-gap: 0.4rem; column-gap: 0.5rem; }
