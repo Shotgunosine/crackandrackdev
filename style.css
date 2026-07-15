@@ -455,6 +455,17 @@ button.ghost {
   text-shadow: 0 2px 12px rgba(0,0,0,0.9);
   pointer-events: none;
 }
+/* result of an attempt (FLASH / Nice Send / falls) shown over the crack window */
+.adv-result-msg {
+  position: absolute; inset: 0; z-index: 8;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  font-size: 2.2rem; font-weight: 800; padding: 0 0.5rem; line-height: 1.1;
+  text-shadow: 0 2px 14px rgba(0,0,0,0.95);
+  pointer-events: none;
+}
+.adv-result-msg.send { color: var(--good); }
+.adv-result-msg.send-flash { color: var(--accent); }
+.adv-result-msg.fall { color: var(--bad); }
 
 /* vertical route gauge: 0ft at bottom → 100ft at top */
 .route-gauge {
@@ -475,6 +486,12 @@ button.ghost {
   background: rgba(224,169,27,0.28); border-radius: 3px;
 }
 .gauge-fall.danger { background: rgba(204,51,51,0.4); }
+/* fuzzy extension = rope-stretch uncertainty, fading out toward the deepest reach */
+.gauge-fall-fuzz {
+  position: absolute; left: 6px; right: 6px;
+  background: linear-gradient(180deg, rgba(224,169,27,0.26), rgba(224,169,27,0));
+}
+.gauge-fall-fuzz.danger { background: linear-gradient(180deg, rgba(204,51,51,0.38), rgba(204,51,51,0)); }
 .gauge-gear {
   position: absolute; left: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
   border-radius: 50%; border: 1px solid rgba(0,0,0,0.5); z-index: 2;
@@ -489,6 +506,8 @@ button.ghost {
 .adv-stamina-label { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
 .adv-stamina .rc-track { flex: 1; height: 18px; }
 .adv-stamina .rc-bar { top: 0; bottom: 0; left: 0; border-radius: 4px; transition: width 0.12s linear; }
+.adv-fear .adv-stamina-label { color: var(--muted); }
+.adv-fear.fear-high .rc-track { animation: flamepulse 0.9s ease-in-out infinite alternate; }
 
 .adv-readouts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.7rem; }
 .adv-chip {

@@ -656,15 +656,28 @@ function refreshCompareChart() {
    ============================================================ */
 const ADV_TOP = 100;              // climb height, feet
 const ADV_START_STAMINA = 100;
-const ADV_DRAIN = { Easy: 0.05, Hard: 0.1 }; // stamina/sec by stance
+const ADV_DRAIN = { Easy: 0.05, Hard: 0.5 }; // stamina/sec by stance
 const ADV_WRONG_PENALTY = 5;      // for a cam that doesn't fit
 const ADV_MOVE_COST = 0.1;        // stamina per foot climbed between cracks
 const ADV_SCARE_K = 0.15;          // extra drain/sec = K * fallDistance when scared
 const ADV_SCARE_MARGIN = 5;       // ft of clearance below which you're "scared"
-const ADV_ROPE_STRETCH = 0.15;    // fall = 2*runout + STRETCH*height
+const ADV_STRETCH_MAX = 0.4;      // rope stretch tops out at 40% of the fall...
+const ADV_STRETCH_FALL = 40;      // ...reached at a 40ft fall (quadratic, 0 at 0ft)
 const ADV_WHIP_MIN = 10;          // clean fall beyond this = "Nice whip"
+const ADV_FEAR_MAX = 100;         // gripped (forced to stop) when fear reaches this
+const ADV_FEAR_RISE = 6;          // fear/sec while standing scared
+const ADV_FEAR_RECOVER = 12;      // fear/sec recovered while not scared
+const ADV_FEAR_MOVE = 28;         // fear added by climbing on while scared (anti-runout-spam)
 
 let adv = null;                   // { climb, ci, height, stamina, placed:[], used:Set, over, sent, fall }
+
+// Rope stretch grows quadratically with the fall: 0 at 0ft → ADV_STRETCH_MAX at
+// ADV_STRETCH_FALL, capped there. Returns [guaranteed base fall, total incl. stretch].
+function fallWithStretch(runout) {
+  const base = 2 * runout;
+  const frac = ADV_STRETCH_MAX * Math.min(1, (base / ADV_STRETCH_FALL) ** 2);
+  return { base, total: base + base * frac };
+}
 
 function advHeight() {
   return adv.ci < adv.climb.cracks.length ? adv.climb.cracks[adv.ci].h : ADV_TOP;
@@ -706,7 +719,7 @@ function generateClimb() {
   let lastGearH = null;
   for (const c of cracks) {
     const runout = c.h - (lastGearH ?? 0);
-    const fall = 2 * runout + ADV_ROPE_STRETCH * c.h;
+    const fall = fallWithStretch(runout).total;
     const landing = c.h - fall;
     const safe = lastGearH != null && landing > ADV_SCARE_MARGIN + 1;
     if (!safe) {
@@ -734,17 +747,18 @@ function computeAdvFall() {
   const lastGearH = gearHs.length ? Math.max(...gearHs) : null;
   const isProtected = lastGearH != null;
   const runout = h - (lastGearH ?? 0);
-  const rawFall = 2 * runout + ADV_ROPE_STRETCH * h; // rope-limited fall if unobstructed
-  const landing = h - rawFall;
-  const hazardDist = h; // the ground is the only fall hazard
+  const s = fallWithStretch(runout);  // { base (guaranteed), total (incl. stretch) }
+  const landing = h - s.total;        // worst case (max stretch)
+  const hazardDist = h;               // the ground is the only fall hazard
   // Not scared if the ground is a short (<5ft) fall away, or you're protected and
-  // would be caught clear of it.
+  // would be caught clear of it (worst-case stretch included).
   const scared = hazardDist >= ADV_SCARE_MARGIN
     && (!isProtected || landing <= ADV_SCARE_MARGIN);
   // You can't fall past the ground.
-  const fallDistance = Math.min(rawFall, hazardDist);
+  const guaranteedFall = Math.min(s.base, hazardDist);  // no-stretch minimum
+  const fallDistance = Math.min(s.total, hazardDist);   // with-stretch maximum
   const stopHeight = h - fallDistance;
-  return { h, isProtected, runout, rawFall, landing, hazardDist, scared, fallDistance, stopHeight };
+  return { h, isProtected, runout, baseFall: s.base, guaranteedFall, fallDistance, landing, hazardDist, scared, stopHeight };
 }
 function fallOutcome(f) {
   if (f.landing <= 0) return { kind: "ground", msg: "Oof, ground fall" };
@@ -763,11 +777,18 @@ function staminaTick(now) {
   const dt = Math.min(0.1, (now - advLast) / 1000);
   advLast = now;
   const stance = adv.climb.cracks[Math.min(adv.ci, adv.climb.cracks.length - 1)].stance;
+  const scared = !!(adv.fall && adv.fall.scared);
   let rate = ADV_DRAIN[stance] || 0.05;
-  if (adv.fall && adv.fall.scared) rate += ADV_SCARE_K * adv.fall.fallDistance;
+  if (scared) rate += ADV_SCARE_K * adv.fall.fallDistance;
   adv.stamina = Math.max(0, adv.stamina - rate * dt);
   setStaminaBar();
+  // fear builds while scared, recovers when safe
+  adv.fear = scared
+    ? Math.min(ADV_FEAR_MAX, adv.fear + ADV_FEAR_RISE * dt)
+    : Math.max(0, adv.fear - ADV_FEAR_RECOVER * dt);
+  setFearBar();
   if (adv.stamina <= 0) { triggerFall(); return; }
+  if (adv.fear >= ADV_FEAR_MAX) { triggerGripped(); return; }
   advRAF = requestAnimationFrame(staminaTick);
 }
 
@@ -780,7 +801,7 @@ function enterAdventure() {
 function newClimb() {
   const climb = generateClimb();
   climb.attempts = 1;
-  adv = { climb, ci: 0, stamina: ADV_START_STAMINA, placed: [], used: new Set(),
+  adv = { climb, ci: 0, stamina: ADV_START_STAMINA, fear: 0, placed: [], used: new Set(),
           over: false, sent: false, fall: null };
   hideOutcome();
   hideCamAnim(); hideFitMsg();
@@ -789,7 +810,7 @@ function newClimb() {
 }
 function retryClimb() {
   adv.climb.attempts += 1;
-  Object.assign(adv, { ci: 0, stamina: ADV_START_STAMINA, placed: [], used: new Set(),
+  Object.assign(adv, { ci: 0, stamina: ADV_START_STAMINA, fear: 0, placed: [], used: new Set(),
                        over: false, sent: false, fall: null });
   hideOutcome();
   hideCamAnim(); hideFitMsg();
@@ -819,6 +840,12 @@ function placeGear(camIdx) {
 function climbOn() {
   if (!adv || adv.over) return;
   hideCamAnim(); hideFitMsg();               // leaving this stance — the placed cam is now below you
+  // running it out (climbing on while scared) spikes fear
+  if (adv.fall && adv.fall.scared) {
+    adv.fear = Math.min(ADV_FEAR_MAX, adv.fear + ADV_FEAR_MOVE);
+    setFearBar();
+    if (adv.fear >= ADV_FEAR_MAX) { triggerGripped(); return; }
+  }
   const cur = advHeight();
   const nextIdx = adv.ci + 1;
   const nextH = nextIdx < adv.climb.cracks.length ? adv.climb.cracks[nextIdx].h : ADV_TOP;
@@ -848,6 +875,15 @@ function triggerFall() {
   const out = fallOutcome(computeAdvFall());
   showOutcome(out.msg, "fall");
 }
+// Fear maxed out — you're gripped and can't move on. Attempt over.
+function triggerGripped() {
+  if (!adv || adv.over) return;
+  adv.over = true;
+  stopStamina();
+  setStaminaBar(); setFearBar();
+  hideCamAnim(); hideFitMsg();
+  showOutcome("Too scared to go on 😰", "fall");
+}
 
 /* ---------- render ---------- */
 function setStaminaBar() {
@@ -856,6 +892,14 @@ function setStaminaBar() {
   bar.style.width = adv.stamina + "%";
   const hue = Math.max(0, Math.min(120, (adv.stamina / 100) * 120)); // 120 green → 0 red
   bar.style.background = `hsl(${hue}, 65%, 45%)`;
+}
+function setFearBar() {
+  const bar = $("advFearBar");
+  if (!bar || !adv) return;
+  bar.style.width = adv.fear + "%";
+  const hue = Math.max(0, 45 - adv.fear * 0.45);  // amber → red as fear climbs
+  bar.style.background = `hsl(${hue}, 85%, 48%)`;
+  bar.parentElement.parentElement.classList.toggle("fear-high", adv.fear >= 70 && !adv.over);
 }
 function renderAdventure() {
   if (!adv) return;
@@ -871,6 +915,7 @@ function renderAdventure() {
   $("advHeight").innerHTML = `${Math.round(adv.fall.h)} ft`;
   $("advStance").textContent = atCrack && !adv.over ? crack.stance : "—";
   setStaminaBar();
+  setFearBar();
   renderAdvReadouts();
   renderAdvGear();
   renderRouteGauge();
@@ -883,7 +928,8 @@ function renderAdvReadouts() {
   const chips = [
     ["Height", `${Math.round(f.h)} ft`],
     ["Above gear", f.isProtected ? `${Math.round(f.runout)} ft` : "—"],
-    ["Fall", `${Math.round(f.fallDistance)} ft`],
+    // guaranteed fall + "+" (rope stretch adds an uncertain amount on top)
+    ["Fall", `${Math.round(f.guaranteedFall)}${f.fallDistance > f.guaranteedFall + 0.5 ? "+" : ""} ft`],
     ["Gear left", `${CAMS.length - adv.used.size}`],
   ];
   $("advReadouts").innerHTML =
@@ -930,12 +976,20 @@ function renderRouteGauge() {
     `<svg class="gauge-svg" viewBox="0 0 100 1000" preserveAspectRatio="none" aria-hidden="true">` +
     `<path d="${d}" fill="#0b0d10"/>${bands}</svg>`);
 
-  // fall zone (current → the ground)
+  // fall zone: solid = guaranteed fall; fuzzy = extra reach from rope-stretch uncertainty
   if (!adv.over) {
-    const zone = el("div", "gauge-fall" + (f.scared ? " danger" : ""));
-    zone.style.top = y(f.h);
-    zone.style.height = Math.max(0, f.fallDistance / ADV_TOP * 100) + "%";
-    g.appendChild(zone);
+    const dngr = f.scared ? " danger" : "";
+    const solid = el("div", "gauge-fall" + dngr);
+    solid.style.top = y(f.h);
+    solid.style.height = Math.max(0, f.guaranteedFall / ADV_TOP * 100) + "%";
+    g.appendChild(solid);
+    const fuzzH = (f.fallDistance - f.guaranteedFall) / ADV_TOP * 100;
+    if (fuzzH > 0.1) {
+      const fuzz = el("div", "gauge-fall-fuzz" + dngr);
+      fuzz.style.top = y(f.h - f.guaranteedFall);
+      fuzz.style.height = fuzzH + "%";
+      g.appendChild(fuzz);
+    }
   }
   adv.placed.forEach((p) => {
     const gd = el("div", "gauge-gear"); gd.style.top = y(p.h); gd.style.background = p.colorHex; g.appendChild(gd);
@@ -986,12 +1040,19 @@ function hideCamAnim() {
   if (a) { a.hidden = true; a.classList.remove("play"); }
 }
 function showOutcome(msg, cls) {
-  $("advOutcomeMsg").textContent = msg;
-  $("advOutcomeMsg").className = "adv-outcome-msg " + cls;
+  // result message shows over the crack window; only the buttons sit below
+  const r = $("advResultMsg");
+  r.textContent = msg;
+  r.className = "adv-result-msg " + cls;
+  r.hidden = false;
   $("advOutcome").hidden = false;
   $("advControls").hidden = true;
 }
-function hideOutcome() { $("advOutcome").hidden = true; $("advControls").hidden = false; }
+function hideOutcome() {
+  $("advResultMsg").hidden = true;
+  $("advOutcome").hidden = true;
+  $("advControls").hidden = false;
+}
 function bumpAdvCounter(key) {
   localStorage.setItem(key, String((parseInt(localStorage.getItem(key), 10) || 0) + 1));
 }

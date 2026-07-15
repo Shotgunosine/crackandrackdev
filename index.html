@@ -6,7 +6,7 @@
   <title>Crack &amp; Rack — Trad Gear Trainer</title>
   <!-- Inline favicon so the browser doesn't fire an (often warned-about) request over file:// -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%236b6157'/%3E%3Crect x='7' width='2' height='16' fill='%230b0d10'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <div class="cal-banner" id="calBanner" hidden>
@@ -206,12 +206,17 @@
             </div>
           </div>
           <div class="adv-fit-msg" id="advFitMsg" hidden></div>
+          <div class="adv-result-msg" id="advResultMsg" hidden></div>
         </div>
       </div>
 
       <div class="adv-stamina">
         <span class="adv-stamina-label">Stamina</span>
         <div class="rc-track"><div class="rc-bar" id="advStaminaBar"></div></div>
+      </div>
+      <div class="adv-stamina adv-fear">
+        <span class="adv-stamina-label">Fear</span>
+        <div class="rc-track"><div class="rc-bar" id="advFearBar"></div></div>
       </div>
 
       <div class="adv-readouts" id="advReadouts"></div>
@@ -224,7 +229,6 @@
       </div>
 
       <div class="adv-outcome" id="advOutcome" hidden>
-        <p class="adv-outcome-msg" id="advOutcomeMsg"></p>
         <div class="btn-row">
           <button class="primary" id="advRetry">Retry</button>
           <button class="ghost" id="advNew">New climb</button>
@@ -273,6 +277,6 @@
     </section>
   </main>
 
-  <script src="game.js"></script>
+  <script src="game.js?v=3"></script>
 </body>
 </html>
