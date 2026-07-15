@@ -684,28 +684,43 @@ function advHeight() {
 }
 
 /* ---------- climb generation (safe by construction) ---------- */
+// Largest crack (mm) that renders at true size within the adventure wall. Cracks and
+// key cams are kept at/under this so every climb is completable with on-screen gear.
+function advMaxDisplayableMm() {
+  const w = $("advWall") ? $("advWall").clientWidth : 0;
+  return w ? (w * DISPLAY_MARGIN) / effectivePxPerMm() : Infinity;
+}
 function pickStance() {
   return Math.random() < 0.5 ? "Easy" : "Hard";
 }
-function keyWidthForCam(camIdx) {
-  const pool = BYCAM.hard[camIdx];
-  return pool && pool.length ? pick(pool) : round1(CAMS[camIdx].center);
+function keyWidthForCam(camIdx, maxDisp) {
+  const pool = (BYCAM.hard[camIdx] || []).filter((w) => w <= maxDisp);
+  if (pool.length) return pick(pool);
+  const c = CAMS[camIdx];
+  return round1(Math.min(c.center, maxDisp, c.max)); // stay inside range + on screen
 }
-function pickUnusedCamForKey(used) {
-  const avail = CAMS.map((_, i) => i)
-    .filter((i) => !used.has(i) && BYCAM.hard[i] && BYCAM.hard[i].length);
+// Pick an unused cam that can protect an on-screen crack (its narrowest end fits).
+function pickUnusedCamForKey(used, maxDisp) {
+  const avail = CAMS.map((_, i) => i).filter((i) =>
+    !used.has(i) && CAMS[i].min <= maxDisp && (BYCAM.hard[i] || []).some((w) => w <= maxDisp));
   return avail.length ? pick(avail) : null;
 }
-function fillerWidth() {
-  if (Math.random() < 0.5) {                       // protectable-but-optional
-    const c = pick(CAMS);
-    return round1(c.min + Math.random() * (c.max - c.min));
+function fillerWidth(maxDisp) {
+  const usable = CAMS.filter((c) => c.min <= maxDisp);
+  const r = Math.random();
+  if (r < 0.5 && usable.length) {                  // protectable-but-optional, on screen
+    const c = pick(usable);
+    const hi = Math.min(c.max, maxDisp);
+    return round1(c.min + Math.random() * Math.max(0, hi - c.min));
   }
-  return Math.random() < 0.5                        // deliberately unprotectable
-    ? round1(Math.max(2, RACK_MIN * (0.5 + Math.random() * 0.35)))  // too small
-    : round1(RACK_MAX * (1.05 + Math.random() * 0.3));             // too big
+  const usableMax = usable.length ? Math.max(...usable.map((c) => c.max)) : 0;
+  if (r < 0.75 && usableMax < maxDisp - 2) {       // too big for any on-screen cam
+    return round1(usableMax + Math.random() * (maxDisp - usableMax));
+  }
+  return round1(Math.max(2, Math.min(maxDisp, RACK_MIN * (0.5 + Math.random() * 0.4)))); // too small
 }
 function generateClimb() {
+  const maxDisp = advMaxDisplayableMm();
   // 1) lay cracks at 4-8ft gaps; assign an Easy/Hard stance to each
   const cracks = [];
   let h = 4 + Math.random() * 3;
@@ -723,9 +738,9 @@ function generateClimb() {
     const landing = c.h - fall;
     const safe = lastGearH != null && landing > ADV_SCARE_MARGIN + 1;
     if (!safe) {
-      const camIdx = pickUnusedCamForKey(used);  // null => out of cams (best effort)
+      const camIdx = pickUnusedCamForKey(used, maxDisp);  // null => out of cams (best effort)
       if (camIdx != null) {
-        c.width = keyWidthForCam(camIdx);
+        c.width = keyWidthForCam(camIdx, maxDisp);
         c.key = true;
         used.add(camIdx);
         lastGearH = c.h;
@@ -734,7 +749,7 @@ function generateClimb() {
   }
   // 3) filler widths for the rest (some fit unused cams, some unprotectable) + tilt
   for (const c of cracks) {
-    if (c.width == null) c.width = fillerWidth();
+    if (c.width == null) c.width = fillerWidth(maxDisp);
     c.angle = (Math.random() * 2 - 1) * HARD_ANGLE_MAX;
   }
   return { cracks, top: ADV_TOP, attempts: 0 };
@@ -939,6 +954,7 @@ function renderAdvReadouts() {
 function renderAdvGear() {
   const grid = $("advGear");
   grid.innerHTML = "";
+  const maxDisp = advMaxDisplayableMm();
   CAMS.forEach((cam, i) => {
     const btn = el("button", "gear-btn");
     btn.title = cam.color;
@@ -946,6 +962,14 @@ function renderAdvGear() {
       `<span class="swatch" style="background:${cam.colorHex}"></span>` +
       `<span class="gsize">#${cam.size}</span>`;
     if (adv.used.has(i)) { btn.classList.add("used"); btn.disabled = true; }
+    else if (cam.min > maxDisp) {          // too big to show at true size on this screen
+      btn.classList.add("unavailable");
+      btn.setAttribute("aria-disabled", "true");
+      const msg = `#${cam.size} (${cam.color}) is too big to show at true size on this screen.`;
+      btn.addEventListener("mouseenter", () => showAdvNote(msg));
+      btn.addEventListener("mouseleave", () => { $("advNote").hidden = true; });
+      btn.addEventListener("click", () => showAdvNote(msg, true));
+    }
     else if (adv.over) { btn.disabled = true; }
     else { btn.addEventListener("click", () => placeGear(i)); }
     grid.appendChild(btn);
